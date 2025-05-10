@@ -1,25 +1,29 @@
 // app/components/HomePage.tsx
 
 'use client';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'; // Added useMemo
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import dynamic from 'next/dynamic';
 
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { Search, Droplet, Wind, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'; // Added Loader2
+// Added Star icons and Loader2 for loading/tracking status
+import { Search, Droplet, Wind, ChevronDown, ChevronUp, Loader2, Star } from 'lucide-react';
 
+// Assuming WeatherHelpers exists and is correctly implemented
 import { weatherCodeMap, getWeatherIcon } from './WeatherHelpers';
 
 type Suggestion = { name: string; lat: number; lon: number };
 type LocationCoords = { lat: number; lon: number };
 
 // Assuming MapComponent exists and is correctly implemented
+// Uncomment and position as needed in your layout
 const MapComponent = dynamic(() => import('./MapComponent'), { ssr: false });
 
 export default function HomePage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
   const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE_URL || '';
+
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -29,7 +33,7 @@ export default function HomePage() {
   const [displayedLoc, setDisplayedLoc] = useState('Harare');
   // State for the coordinates of the location whose weather is currently displayed - this triggers weather fetches
   const [displayedCoords, setDisplayedCoords] = useState<LocationCoords | null>({ lat: -17.8252, lon: 31.0335 });
-   // State for the map center, can be different from displayedCoords during interaction
+   // State for the map center, derived from displayedCoords
    const mapCenter = useMemo(() => displayedCoords || { lat: 0, lon: 0 }, [displayedCoords]);
 
 
@@ -55,38 +59,31 @@ export default function HomePage() {
   // State for displaying status messages (e.g., "Location not found in DB")
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // State to store the tracking status of the currently displayed location
+  const [isDisplayedLocationTracked, setIsDisplayedLocationTracked] = useState(false);
+
+
   // --- Effect to fetch weather data when displayedCoords changes ---
+  // This effect is the core driver for fetching weather data once a location (name+coords)
+  // has been determined via search lookup, suggestion selection, or map click.
   useEffect(() => {
-    // Only fetch if we have coordinates to fetch for
-    if (!displayedCoords) {
-        console.log("Displayed coords not set, clearing weather.");
+    // Only fetch if we have coordinates AND a location name to fetch for
+    if (!displayedCoords || !displayedLoc) {
+        console.log("Displayed location or coords not fully set, clearing weather/WS.");
         setCurrent(null);
         setForecast([]);
+        setIsDisplayedLocationTracked(false); // Clear tracking status
         // Close WebSocket if we lose the displayed location
          if (wsRef.current) {
             wsRef.current.close(1000, 'No displayed location');
             wsRef.current = null;
         }
-        return; // Exit if no coords
+        return; // Exit if data is incomplete
     }
-
-    // Also require displayedLoc to be set for the WS connection and backend API call
-    if (!displayedLoc) {
-         console.warn("Displayed coords set but displayedLoc is missing, skipping fetch/WS.");
-         // Decide how to handle this case - maybe reverse geocode here?
-         // For now, exit and clear state.
-         setCurrent(null);
-         setForecast([]);
-         if (wsRef.current) {
-            wsRef.current.close(1000, 'Displayed location name missing');
-            wsRef.current = null;
-        }
-         return;
-    }
-
 
     setIsLoadingWeather(true);
     setStatusMessage(null); // Clear previous status messages
+    // Tracking status is determined by the fetch result, no need to clear here
 
     // Close existing socket when displayed location changes
     if (wsRef.current) {
@@ -96,11 +93,12 @@ export default function HomePage() {
     }
 
     // --- Fetch weather data by coordinates ---
+    // This endpoint now handles the DB vs API decision internally based on tracking status
     const fetchWeatherByCoords = async () => {
       console.log(`Workspaceing weather data for "${displayedLoc}" (${displayedCoords.lat}, ${displayedCoords.lon})...`);
       try {
-        // Call the backend endpoint that fetches weather by lat/lon (from API, upserts DB)
-        // IMPORTANT: Include the location name here as the backend /api/weather expects it now
+        // Call the backend endpoint that fetches weather by lat/lon (from API/DB, upserts DB)
+        // Include the location name as the backend /api/weather uses it for lookup/upsert
         const res = await fetch(
           `${API_BASE}/api/weather?location=${encodeURIComponent(displayedLoc)}&lat=${displayedCoords.lat}&lon=${displayedCoords.lon}`
         );
@@ -113,15 +111,14 @@ export default function HomePage() {
         }
 
         const weatherData = await res.json();
-        console.log("Received weather data by coords:", weatherData);
-
+        console.log("Received weather data from /api/weather:", weatherData);
 
         // Update current weather state
         setCurrent({
           temp: weatherData.temperature,
           wind: weatherData.windSpeed,
           humidity: weatherData.humidity,
-          condition: weatherData.conditionCode?.toString(), // Ensure condition is string if WeatherHelpers expects string
+          condition: weatherData.conditionCode?.toString(), // Ensure condition is string
         });
 
         // Update forecast state
@@ -140,12 +137,16 @@ export default function HomePage() {
              setForecast([]); // Clear forecast if data is missing/invalid
         }
 
-         console.log(`Successfully updated weather data.`);
+         // Update tracking status from the response
+         setIsDisplayedLocationTracked(weatherData.isTracking || false);
+
+         console.log(`Successfully updated weather data for "${displayedLoc}". Location is tracked: ${weatherData.isTracking}`);
 
       } catch (err) {
         console.error("Failed to fetch weather data by coords:", err);
         setCurrent(null);
         setForecast([]);
+        setIsDisplayedLocationTracked(false); // Clear tracking status on error
         setStatusMessage("Failed to load weather data."); // Show error message
       } finally {
           setIsLoadingWeather(false);
@@ -162,8 +163,6 @@ export default function HomePage() {
 
         ws.onopen = () => {
             console.log(`WebSocket connection established for "${displayedLoc}" at ${WS_BASE}/ws`);
-            // Optionally send initial identification message if needed by your WS server
-            // ws.send(JSON.stringify({ type: 'IDENTIFY', location: displayedLoc }));
         };
 
         ws.onmessage = (evt) => {
@@ -174,7 +173,9 @@ export default function HomePage() {
                 // Assuming message format from WS server matches the current state structure
                 // { temperature, windSpeed, humidity, conditionCode }
                 if (msg.temperature !== undefined && msg.windSpeed !== undefined && msg.humidity !== undefined && msg.conditionCode !== undefined) {
-                    setCurrent(prev => { // Use functional update to merge with existing state if needed
+                    setCurrent(prev => {
+                        // Use functional update to merge with existing state
+                        // (Good practice, but simpler to just return new object here if replacing entire state)
                         return {
                             temp: msg.temperature,
                             wind: msg.windSpeed,
@@ -207,7 +208,7 @@ export default function HomePage() {
      }
 
 
-    // Cleanup function to close WebSocket on component unmount or displayedCoords change
+    // Cleanup function to close WebSocket on component unmount or displayedCoords/Loc change
     return () => {
       if (wsRef.current) {
         wsRef.current.close(1000, 'Location change or component unmount'); // Clean closure code and reason
@@ -240,7 +241,10 @@ export default function HomePage() {
              setDisplayedLoc(''); // Clear displayed name
              setSuggestions([]); // Clear suggestions
              setShowSuggestions(false);
-             setStatusMessage(null); // Clear status
+             setStatusMessage("Please enter a location name."); // Prompt user
+             setCurrent(null); // Clear display
+             setForecast([]);
+             setIsDisplayedLocationTracked(false);
              return;
         }
 
@@ -249,6 +253,12 @@ export default function HomePage() {
         setStatusMessage(null); // Clear previous status/error messages
         setSuggestions([]); // Clear suggestions from previous typing
         setShowSuggestions(false); // Hide suggestions list
+         // Clear displayed weather/coords while searching
+        setDisplayedCoords(null);
+        setCurrent(null);
+        setForecast([]);
+        setIsDisplayedLocationTracked(false);
+
 
         try {
             // Call the backend endpoint to lookup location by name in DB
@@ -260,17 +270,22 @@ export default function HomePage() {
                 // Update displayed location and coords from DB data
                 setDisplayedLoc(locationData.name);
                 setDisplayedCoords({ lat: locationData.latitude, lon: locationData.longitude });
-                // Effect triggered by displayedCoords change will fetch weather by coords (which will use API and update DB if stale)
+                 // The isTracking status from lookup is not used directly here
+                 // as the /api/weather endpoint will return the definitive status
+                 // after fetching/retrieving weather data.
+                 // setIsDisplayedLocationTracked(locationData.isTracking); // Don't set here
+
                 setStatusMessage(null); // Clear status message
+
+                // The useEffect triggered by displayedCoords change will now fetch weather
+                // The /api/weather endpoint will handle fetching from DB vs API based on tracking
+
             } else if (res.status === 404) { // Location not found in DB
                 console.log(`Location "${inputLoc}" not found in DB. Proceeding with geocoding.`);
-                // Clear displayed weather/coords as name wasn't found (important!)
-                setDisplayedCoords(null);
-                setCurrent(null); // Clear current weather display immediately
-                setForecast([]); // Clear forecast display immediately
+                // Clear displayed weather/coords as name wasn't found (already done above)
 
                 setDisplayedLoc(inputLoc); // Keep the typed name in displayedLoc temporarily for status message
-                setStatusMessage(`"${inputLoc}" not found in DB. Please select from suggestions.`); // Inform user
+                setStatusMessage(`"${inputLoc}" not found in DB. Select from suggestions or map.`); // Inform user
 
                 // Trigger geocoding search again using the input value
                 searchLocationForSuggestions(inputLoc);
@@ -280,24 +295,18 @@ export default function HomePage() {
                 console.error(`DB Lookup HTTP error! status: ${res.status}, statusText: ${res.statusText}`);
                 console.error('Lookup Error body:', errorBody);
                 setStatusMessage(`Error during lookup: ${res.status}`);
-                 // Clear weather/coords on error
-                 setDisplayedCoords(null);
-                 setCurrent(null);
-                 setForecast([]);
+                 // Clear weather/coords on error (already done above)
                  setDisplayedLoc(inputLoc);
             }
         } catch (err) {
             console.error("Error during DB lookup:", err);
             setStatusMessage("An error occurred during location lookup.");
-             // Clear weather/coords on error
-             setDisplayedCoords(null);
-             setCurrent(null);
-             setForecast([]);
+             // Clear weather/coords on error (already done above)
              setDisplayedLoc(inputLoc);
         } finally {
-            // setIsLoadingWeather(false); // Loading is handled by the effect triggered by displayedCoords
-            // Only turn off loading here if 404 or error occurred and effect didn't trigger fetch
-            if (!displayedCoords && !statusMessage) { // If coords wasn't set by lookup success
+            // Loading state is now primarily managed by the effect triggered by displayedCoords
+            // Only stop loading here if no weather fetch is about to be triggered (i.e., 404 or other lookup error)
+            if (!displayedCoords) { // If coords wasn't set by lookup success
                  setIsLoadingWeather(false);
             }
         }
@@ -316,6 +325,7 @@ export default function HomePage() {
         setShowSuggestions(false); // Hide suggestions list
         setStatusMessage(null); // Clear any status messages
         // setIsLoadingWeather(true); // Loading is set by the effect
+        setIsDisplayedLocationTracked(false); // Assume not tracked until /api/weather confirms
     };
 
      // Geocoding suggestions fetch (mostly unchanged, triggered by input or DB miss)
@@ -386,6 +396,11 @@ export default function HomePage() {
       setSuggestions([]); // Clear suggestions
       setShowSuggestions(false); // Hide suggestions list
       setInputLoc("Identifying location..."); // Show temporary text in input
+      setDisplayedCoords(null); // Clear weather display immediately
+      setCurrent(null);
+      setForecast([]);
+      setIsDisplayedLocationTracked(false);
+
 
       try {
           // Reverse geocode to get location name
@@ -401,11 +416,14 @@ export default function HomePage() {
       } catch (error) {
           console.error("Error handling map click:", error);
           setStatusMessage("Could not identify location from map click.");
-          // Decide if you want to clear displayedCoords or try to fetch with coords only
-          setDisplayedCoords(null); // Clear weather on error
-          setDisplayedLoc("Unknown Location"); // Set a placeholder name
-          setInputLoc("Error identifying location"); // Set input to reflect error
           setIsLoadingWeather(false); // Stop loading if reverse geocode fails
+          // Clear state again in catch just in case
+          setDisplayedCoords(null);
+          setDisplayedLoc("Unknown Location");
+          setInputLoc("Error identifying location");
+          setCurrent(null);
+          setForecast([]);
+          setIsDisplayedLocationTracked(false);
       }
       // Weather fetch loading is handled by the effect triggered by displayedCoords
     },
@@ -475,6 +493,7 @@ export default function HomePage() {
       }
 
       console.log(`Attempting to track location: "${displayedLoc}" (${displayedCoords.lat}, ${displayedCoords.lon})...`);
+       // Optionally show a tracking state/spinner on the button
 
       try {
           // POST to the /api/track endpoint with the displayed location details
@@ -495,8 +514,9 @@ export default function HomePage() {
           if (response.ok) {
               const result = await response.json();
               console.log(`Location "${displayedLoc}" successfully sent to backend for tracking.`, result);
+              // Update frontend state to reflect that the displayed location is now tracked
+              setIsDisplayedLocationTracked(true);
               alert(`Location "${displayedLoc}" is now being tracked!`); // Simple user feedback
-              // Optionally update UI state if location is now explicitly marked as tracked
           } else {
                const errorBody = await response.text();
               console.error(`Failed to send location "${displayedLoc}" for tracking. Status: ${response.status}`);
@@ -593,9 +613,9 @@ export default function HomePage() {
             </AnimatePresence>
           </div>
 
-           {/* Status Message Display */}
-           {/* Show status message or loading spinner depending on state */}
-            {statusMessage || isLoadingWeather ? (
+           {/* Status Message or Loading Spinner Display */}
+            {/* Show status message or loading spinner depending on state */}
+            {(statusMessage && !current) || isLoadingWeather ? ( // Only show status/loading if no current weather is displayed
                 <AnimatePresence mode="wait">
                     {isLoadingWeather ? (
                         <motion.div
@@ -606,7 +626,7 @@ export default function HomePage() {
                             className="flex justify-center items-center text-white mt-2 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
                         >
                             <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                            <span>Loading weather...</span>
+                             <span>Loading weather...</span>
                         </motion.div>
                     ) : (
                          <motion.div
@@ -623,18 +643,34 @@ export default function HomePage() {
             ) : null /* Don't render anything if no status and not loading */}
 
 
-          {/* Weather Display (Show only if current data exists and not loading/showing status) */}
-          {current && !isLoadingWeather && !statusMessage ? (
+          {/* Weather Display (Show only if current data exists and not explicitly showing a status message) */}
+          {current && !statusMessage ? ( // Only show weather display if current data exists and no blocking status message
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }} // Reduced delay since we have separate loading indicator
+              transition={{ delay: 0.1 }} // Reduced delay
               className="space-y-4 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
             >
               <div className="text-center">
                 {/* Display the name of the location whose weather is loaded */}
-                <h1 className="text-4xl font-extrabold text-white drop-shadow-lg">
-                  {displayedLoc.split(',')[0]}
+                <h1 className="text-4xl font-extrabold text-white drop-shadow-lg inline-flex items-center justify-center space-x-2">
+                  <span>{displayedLoc.split(',')[0]}</span>
+                   {/* Display tracking status star */}
+                   <AnimatePresence mode="wait">
+                     {isDisplayedLocationTracked && (
+                        <motion.span
+                           key="tracked-star"
+                           initial={{ opacity: 0, scale: 0.5 }}
+                           animate={{ opacity: 1, scale: 1 }}
+                           exit={{ opacity: 0, scale: 0.5 }}
+                           transition={{ duration: 0.2 }}
+                           title="This location is tracked" // Tooltip
+                        >
+                           <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                        </motion.span>
+                     )}
+                   </AnimatePresence>
+
                 </h1>
                  {/* Display full location name below if different from primary */}
                 {displayedLoc.split(',').length > 1 && (
@@ -729,12 +765,19 @@ export default function HomePage() {
                {/* Track Button */}
                 <motion.button
                     onClick={handleTrackLocation}
-                     // Disable if no weather is currently displayed
-                    disabled={!displayedLoc || !displayedCoords}
+                     // Disable if no weather is currently displayed or if it's already tracked
+                    disabled={!displayedLoc || !displayedCoords || isDisplayedLocationTracked}
                     className={`w-full flex items-center justify-center text-white transition py-2 rounded-lg mt-4 font-semibold
-                        ${!displayedLoc || !displayedCoords ? 'bg-gray-600/50 cursor-not-allowed' : 'bg-teal-400/80 hover:bg-teal-400/100'}`}
+                        ${!displayedLoc || !displayedCoords || isDisplayedLocationTracked ? 'bg-gray-600/50 cursor-not-allowed' : 'bg-teal-400/80 hover:bg-teal-400/100'}`}
                 >
-                    Track Location
+                    {isDisplayedLocationTracked ? (
+    <>
+        <Star className="w-5 h-5 mr-2 fill-yellow-400 text-yellow-400" />
+        Tracking
+    </>
+) : (
+    "Track Location"
+)}
                 </motion.button>
 
 

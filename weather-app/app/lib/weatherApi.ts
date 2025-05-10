@@ -37,18 +37,25 @@ export async function fetchWeatherFromApi(latitude: number, longitude: number): 
     try {
         // Use the global fetch provided by Next.js
         const response = await fetch(url); // Use the global fetch
+        // console.log(response)
+
 
         if (!response.ok) {
-            console.error(`OpenMeteo API HTTP error! status: ${response.status}`);
-             try {
-                const errorBody = await response.text();
-                console.error('OpenMeteo API Error Body:', errorBody);
-            } catch (e) {
-                 console.error('Could not read OpenMeteo error body:', e);
-            }
-            return undefined; // Indicate failure
+        console.error(`HTTP ${response.status}`);
+        const errText = await response.text();
+        console.error('Error body:', errText);
+        return;
         }
+
+        // Clone the response so you can read it twice
+        const cloned = response.clone();
+        const rawText = await cloned.text();
+        // console.log('Raw API response:', rawText);
+
+
         const data = await response.json();
+        const humidity = data.current.relative_humidity_2m;
+        // console.log('Current humidity (%):', humidity);
 
          // Check for expected structure, including the 'time' array in daily
          if (!data || !data.current || !data.daily || !data.daily.time || !Array.isArray(data.daily.time)) {
