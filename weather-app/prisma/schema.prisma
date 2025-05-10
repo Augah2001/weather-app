@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Location {
+  id            Int             @id @default(autoincrement())
+  name          String          @unique // e.g., "Harare, Zimbabwe"
+  latitude      Float
+  longitude     Float
+  isTracking    Boolean         @default(false) // To mark locations user explicitly tracks
+  createdAt     DateTime        @default(now())
+
+  // Relations to weather data
+  currentWeather CurrentWeather? // 1 to 0 or 1 relation
+  dailyForecasts DailyForecast[] // 1 to many relation
+
+  @@map("locations") // Map model name to database table name
+}
+
+// Stores the latest current weather data for a location
+model CurrentWeather {
+  locationId    Int     @id // Use locationId as primary key and foreign key
+  temperature   Float
+  windSpeed     Float
+  humidity      Int
+  conditionCode Int     // WMO Weather interpretation code
+  fetchedAt     DateTime // When this data was fetched
+
+  // Relation back to Location
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("current_weather")
+}
+
+// Stores the daily forecast data for a location
+model DailyForecast {
+  id            Int       @id @default(autoincrement())
+  locationId    Int
+  date          String    // Store date as YYYY-MM-DD string for uniqueness ease
+  maxTemp       Float
+  minTemp       Float
+  conditionCode Int     // WMO Weather interpretation code
+
+  // Relation back to Location
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  // Ensure only one forecast entry per day per location
+  @@unique([locationId, date])
+  @@map("daily_forecast")
+}
