@@ -1,30 +1,38 @@
-// app/api/track/route.ts (MOSTLY UNCHANGED)
+// app/api/track/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+// Instantiate PrismaClient outside the handler function
 const prisma = new PrismaClient();
 
 export async function POST(request: NextRequest) {
     try {
+        // Parse the JSON request body
         const body = await request.json();
-        const { location, lat, lon } = body; // Expect location name, lat, lon from frontend
+        // Expect location name, lat, and lon from frontend
+        const { location, lat, lon } = body;
 
-        if (!location || typeof lat !== 'number' || typeof lon !== 'number') {
-            return NextResponse.json({ error: 'Invalid request body: location (name), lat, and lon are required' }, { status: 400 });
+        // Validate incoming data
+        if (!location || typeof location !== 'string' || typeof lat !== 'number' || typeof lon !== 'number') {
+            console.error('Invalid request body for /api/track:', body);
+            return NextResponse.json({ error: 'Invalid request body: location (string), lat (number), and lon (number) are required' }, { status: 400 });
         }
 
-        console.log(`Attempting to track location: "${location}" (${lat}, ${lon})...`);
+        console.log(`Attempting to mark location for tracking: "${location}" (${lat}, ${lon})...`);
 
-        // Find the location by name, or create it if it doesn't exist
-        // Use upsert to handle both cases and set isTracking to true
+        // Use upsert to find the location by name, or create it if it doesn't exist.
+        // In either case (found or created), ensure isTracking is set to true.
+        // This handles cases where a non-tracked location is tracked, or a new location is tracked immediately.
         const upsertedLocation = await prisma.location.upsert({
-            where: { name: location }, // Find by name
-            update: { latitude: lat, longitude: lon, isTracking: true }, // Update coords and set tracking if name exists
-            create: { name: location, latitude: lat, longitude: lon, isTracking: true }, // Create and set tracking if name doesn't exist
+            where: { name: location }, // Try to find by the unique name
+            update: { latitude: lat, longitude: lon, isTracking: true }, // If found, update coords and set isTracking
+            create: { name: location, latitude: lat, longitude: lon, isTracking: true }, // If not found, create with these values and set isTracking
         });
 
-        console.log(`Location "${location}" (ID: ${upsertedLocation.id}) marked for tracking.`);
+        console.log(`Location "${upsertedLocation.name}" (ID: ${upsertedLocation.id}) is now marked for tracking.`);
 
+        // Return success response with relevant location info
         return NextResponse.json({ message: 'Location tracking status updated', location: {
              id: upsertedLocation.id,
              name: upsertedLocation.name,
@@ -34,16 +42,17 @@ export async function POST(request: NextRequest) {
         }});
 
     } catch (error: any) {
+        // Log and return a server error if something goes wrong during the DB operation
         console.error('Error in /api/track handler:', error);
-         // Check for specific Prisma errors if needed
-         if (error.code === 'P2002') { // Unique constraint failed (shouldn't happen with upsert on name)
-             console.warn(`Attempted to create location "${location}" but name already exists (P2002).`);
-              // Upsert handles this, so this specific error check might be less needed now,
-              // but general error handling is still important.
+         // Check for specific Prisma errors if needed (e.g., unique constraint violations, though upsert should prevent name duplicates)
+         if (error.code === 'P2002') {
+              console.warn(`Attempted to track location "${location}" but a unique constraint was violated (P2002).`);
+              // Return a specific error for unique constraint if necessary
+              return NextResponse.json({ error: 'Location name already exists with conflicting data' }, { status: 409 }); // Conflict
          }
-        return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 });
+        return NextResponse.json({ error: 'Internal server error while updating tracking status', details: error.message }, { status: 500 });
     } finally {
-         // Disconnect prisma client if necessary
+         // Optional: Disconnect prisma client if necessary
          // await prisma.$disconnect();
     }
 }

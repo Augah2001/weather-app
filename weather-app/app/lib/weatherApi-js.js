@@ -1,8 +1,9 @@
-// lib/weatherApi.ts
+// fetchWeatherFromApi.js
+// This script contains a function to fetch weather data from the OpenMeteo API.
 
-// In Next.js 13+, fetch is globally available on the server
-// You do NOT need to import node-fetch here.
-// const fetch = require('node-fetch'); // <-- REMOVE THIS LINE IF IT'S STILL THERE
+// In Node.js, 'fetch' is globally available in recent versions (Node 18+).
+// If you are using an older Node.js version, you might need to install and require 'node-fetch'.
+// const fetch = require('node-fetch'); // Uncomment this line if using older Node.js
 
 // Base URL for OpenMeteo Forecast API
 const OPENMETEO_WEATHER_API_BASE = 'https://api.open-meteo.com/v1/forecast';
@@ -11,11 +12,11 @@ const OPENMETEO_WEATHER_API_BASE = 'https://api.open-meteo.com/v1/forecast';
  * Fetches current weather and 7-day daily forecast from OpenMeteo.
  * Handles API parameter construction and basic error checking.
  * Maps relevant API response keys to simpler keys.
- * @param {number} latitude
- * @param {number} longitude
- * @returns {Promise<{current: any, daily: any[]} | undefined>} Fetched weather data in a mapped format or undefined on failure.
+ * @param {number} latitude - The latitude of the location.
+ * @param {number} longitude - The longitude of the location.
+ * @returns {Promise<object | undefined>} Fetched weather data in a mapped format or undefined on failure.
  */
-export async function fetchWeatherFromApi(latitude: number, longitude: number): Promise<{ current: any; daily: any[]; } | undefined> {
+async function fetchWeatherFromApi(latitude, longitude) {
     // Construct URLSearchParams using an array of key-value pairs to handle repeated 'daily' keys correctly
     const params = new URLSearchParams([
         ['latitude', latitude.toString()], // Convert numbers to strings for URL params
@@ -42,7 +43,7 @@ export async function fetchWeatherFromApi(latitude: number, longitude: number): 
     console.log("[fetchWeatherFromApi] Fetching OpenMeteo URL:", url); // Log the actual URL being fetched
 
     try {
-        // Use the global fetch provided by Next.js (server-side) or browsers (client-side - though this helper is server-only)
+        // Use the global fetch provided by Node.js (Node 18+)
         const response = await fetch(url);
 
         // Check if the HTTP response status is OK (200-299)
@@ -60,6 +61,7 @@ export async function fetchWeatherFromApi(latitude: number, longitude: number): 
 
         // Parse the JSON response from the API
         const data = await response.json();
+        // console.log(data)
 
          // Perform basic validation on the received data structure
          // Check if expected top-level keys and essential daily data (like time) are present
@@ -80,15 +82,16 @@ export async function fetchWeatherFromApi(latitude: number, longitude: number): 
             condition_code: data.current.weather_code, // WMO code
         };
 
-        // Map daily forecast data
-        const daily = data.daily.time.map((date: string, index: number) => ({
+        // Map daily forecast data. OpenMeteo provides daily variables as parallel arrays indexed by 'time'.
+        const daily = data.daily.time.map((date, index) => ({
             date: date, // YYYY-MM-DD string provided in data.daily.time array
-            max_temp: data.daily.temperature_2m_max[index], // Mapping max temp
-            min_temp: data.daily.temperature_2m_min[index], // Mapping min temp
-            condition_code: data.daily.weather_code[index], // Mapping WMO code
+            max_temp: data.daily.temperature_2m_max[index], // Access max temp using the same index
+            min_temp: data.daily.temperature_2m_min[index], // Access min temp using the same index
+            condition_code: data.daily.weather_code[index], // Access WMO code using the same index
         }));
 
         // Return the mapped current and daily data
+        // console.log("[fetchWeatherFromApi] Mapped weather data:", { current, daily });
         return { current, daily };
 
     } catch (error) {
@@ -98,3 +101,8 @@ export async function fetchWeatherFromApi(latitude: number, longitude: number): 
     }
     // No finally block needed here; cleanup handled by the caller
 }
+
+// Export the function using CommonJS module syntax so it can be required by wsServer.js
+module.exports = {
+    fetchWeatherFromApi
+};
