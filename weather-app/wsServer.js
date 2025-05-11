@@ -8,13 +8,13 @@ const { PrismaClient } = require('@prisma/client'); // Import Prisma Client
 // !!! ADJUST THIS PATH based on where wsServer.js is relative to your lib folder!
 // Example: if wsServer.js is at the project root and lib is at project_root/lib
 const { fetchWeatherFromApi } = require('./app/lib/weatherApi-js'); // <-- ADJUST PATH as needed!
-const { getLocalIsoWithOffset } = require('./app/local_time.js');
+
 
 // --- Configuration ---
 // Get WebSocket server port from environment variables or default to 3002
 const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 3002;
 // Interval for background polling of tracked locations (e.g., every 30 minutes) in milliseconds
-const POLLING_INTERVAL_MS = 15000; // 30 minutes
+const POLLING_INTERVAL_MS = 5000; // 30 minutes
 
 // --- Initialization ---
 const prisma = new PrismaClient(); // Instantiate Prisma Client
@@ -236,7 +236,7 @@ const updateTrackedLocations = async () => {
                             windSpeed: apiData.current.wind_speed,
                             humidity: apiData.current.humidity, // Use the correct key from apiData
                             conditionCode: apiData.current.condition_code,
-                            fetchedAt: getLocalIsoWithOffset(), // Update the fetched timestamp
+                            fetchedAt: new Date(), // Update the fetched timestamp
                         },
                         create: { // This create path is a fallback; update path is used if current data exists
                             locationId: location.id, // Link to the location
@@ -244,7 +244,7 @@ const updateTrackedLocations = async () => {
                             windSpeed: apiData.current.wind_speed,
                             humidity: apiData.current.humidity, // Use the correct key
                             conditionCode: apiData.current.condition_code,
-                            fetchedAt: getLocalIsoWithOffset(), // Set initial timestamp
+                            fetchedAt: new Date(), // Set initial timestamp
                         },
                     });
                     weather = weather_up; // Assign the upserted weather data to the variable

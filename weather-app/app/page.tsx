@@ -15,10 +15,10 @@ import { Search, Droplet, Wind, ChevronDown, ChevronUp, Loader2, Star, Bell } fr
 
 // Assuming WeatherHelpers exists and is correctly implemented
 // Adjust path as necessary for your project structure
-import { weatherCodeMap, getWeatherIcon } from './WeatherHelpers';
-import TrackedLocationsSidebar from './TrackedLocationsSidebar';
-import ChartComponent from './ChartComponent';
-import NotificationsPanel from './NotificationsPanel';
+import { weatherCodeMap, getWeatherIcon } from './Components/WeatherHelpers';
+import TrackedLocationsSidebar from './Components/TrackedLocationsSidebar';
+import ChartComponent from './Components/ChartComponent';
+import NotificationsPanel from './Components/NotificationsPanel';
 
 type Suggestion = { name: string; lat: number; lon: number };
 type LocationCoords = { lat: number; lon: number };
@@ -28,7 +28,7 @@ type LocationCoords = { lat: number; lon: number };
 
 
 const MapComponent = dynamic(
-  () => import('./MapComponent'), 
+  () => import('./Components/MapComponent'), 
   { ssr: false }            // ← never render on the server
 )
 
@@ -311,7 +311,13 @@ prevWeatherRef.current[key] = curr;
 
                 if (msg.temperature !== undefined && msg.windSpeed !== undefined && msg.humidity !== undefined && msg.conditionCode !== undefined) {
                   const timeWithMs = msg.updatedAt.split('T')[1];            // "07:59:21.737Z"
-                  const time = timeWithMs.split('.')[0];     
+                  // "07:59:21.737Z"
+                  const time = timeWithMs.split('.')[0]; 
+                  const hours =parseInt(time.substring(0, 2));
+                  const minutes = parseInt(time.substring(3, 5));
+                  const seconds = parseInt(time.substring(6, 8));
+                  const final_time = `${hours+2}:${minutes}`; // Format time as "HH:MM:SS" 
+                    
                   setCurrent(prev => {
                         // Use functional update to merge with existing state
                         // (Good practice, but simpler to just return new object here if replacing entire state)
@@ -322,7 +328,7 @@ prevWeatherRef.current[key] = curr;
                             wind: msg.windSpeed,
                             humidity: msg.humidity,
                             condition: msg.conditionCode?.toString(),
-                            updatedAt: time // Ensure condition is string
+                            updatedAt: final_time // Ensure condition is string
                         };
                     });
                      console.log(`Current weather updated via WebSocket for "${displayedLoc}".`);
