@@ -19,11 +19,30 @@ type Props = {
 };
 
 export default function TrackedLocationsSidebar({ onSelectLocation, activeLocationId }: Props) {
+  // Start closed by default; will flip in effect if screen ≥768px
   const [isOpen, setIsOpen] = useState(false);
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Sync open/close with viewport width
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mql = window.matchMedia('(min-width: 768px)');
+    const handleChange = (e: MediaQueryListEvent) => setIsOpen(e.matches);
+
+    // Initialize
+    setIsOpen(mql.matches);
+
+    // Listen for resizes across the 768px threshold
+    mql.addEventListener('change', handleChange);
+    return () => {
+      mql.removeEventListener('change', handleChange);
+    };
+  }, []);
+
+  // Fetch tracked locations once
   useEffect(() => {
     async function fetchLocations() {
       try {
@@ -45,11 +64,20 @@ export default function TrackedLocationsSidebar({ onSelectLocation, activeLocati
     <>
       {/* Toggle Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed top-4 left-4 z-30 p-2 bg-gray-800/50 backdrop-blur-sm rounded-full hover:bg-gray-700/70 transition"
+        onClick={() => setIsOpen(v => !v)}
+        className="fixed flex top-4 left-4 z-30 p-2 bg-gray-800/50 backdrop-blur-sm rounded-full hover:bg-gray-700/70 transition"
         aria-label={isOpen ? 'Close locations' : 'Open locations'}
       >
-        {isOpen ? <X className="w-6 h-6 text-white" /> : <List className="w-6 h-6 text-white" />}
+        {isOpen ? (
+          <X className="w-3 h-3 text-yellow-400" />
+        ) : (
+          <>
+            <List className="w-6 h-6 text-white" />
+            <span className="hidden lg:inline text-yellow-400 mx-2">
+              Tracked locations
+            </span>
+          </>
+        )}
       </button>
 
       {/* Sidebar Panel */}
@@ -62,7 +90,9 @@ export default function TrackedLocationsSidebar({ onSelectLocation, activeLocati
             transition={{ type: 'tween', duration: 0.3 }}
             className="fixed inset-y-0 left-0 z-20 w-64 bg-gray-800/70 backdrop-blur-md shadow-xl p-4 overflow-auto"
           >
-            <h2 className="text-xl font-semibold text-white mb-4">Tracked Locations</h2>
+            <h2 className="text-xl font-semibold text-yellow-400 mb-4">
+              Tracked Locations
+            </h2>
 
             {loading ? (
               <p className="text-gray-400">Loading…</p>
@@ -73,7 +103,7 @@ export default function TrackedLocationsSidebar({ onSelectLocation, activeLocati
             ) : (
               <ul className="space-y-2">
                 {locations.map(loc => (
-                  <li key={loc.id}>
+                  <li key={loc.id} className="bg-gray-500/80 rounded-md shadow-md">
                     <button
                       onClick={() => {
                         onSelectLocation(loc);

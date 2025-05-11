@@ -5,12 +5,38 @@
   --foreground: #171717;
 }
 
-@theme inline {
+@theme  {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --screen-xs: 320px;
+  --screen-sm: 640px;
+  --screen-md: 768px;
+  --screen-lg: 1024px;
+  --screen-xl: 1280px;
+  --screen-2xl: 1536px;
 }
+
+
+
+/* Tailwind does not support @theme natively. You can use the :root selector for custom properties instead. */
+
+:root {
+  --screen-xs: 320px;
+  --screen-sm: 640px;
+  --screen-md: 768px;
+  --screen-lg: 1024px;
+  --screen-xl: 1280px;
+  --screen-2xl: 1536px;
+
+  /* You can add other theme customizations here using CSS variables */
+  /* For example: */
+  /* --color-primary: #3490dc; */
+  /* --spacing-128: 32rem; */
+}
+
+/* Your other global styles */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -18,6 +44,10 @@
     --foreground: #ededed;
   }
 }
+
+
+
+
 
 body {
   background: var(--background);

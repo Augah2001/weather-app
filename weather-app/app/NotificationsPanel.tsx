@@ -22,20 +22,22 @@ const NotificationsPanel: FC<Props> = ({ isOpen, notifications, onClose }) => (
         className="fixed top-0 right-0 h-full w-80 bg-gray-800/90 backdrop-blur-lg p-4 overflow-y-auto z-30 flex flex-col"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl text-white font-semibold">Notifications</h2>
+          <h2 className="text-xl text-yellow-400 font-semibold">Notifications</h2>
           <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-700/50">
             <X className="w-5 h-5 text-white" />
+            
           </button>
         </div>
+        <span className='text-sm text-yellow-300/80 mb-2 mt-1'> Your tracked locations updates appear hear</span>
 
         {notifications.length === 0 ? (
           <p className="text-gray-400">No updates yet.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-2 ">
             {notifications.map((note, i) => (
               <li
                 key={i}
-                className="text-white bg-gray-700/50 px-3 py-2 rounded-lg break-words"
+                className="text-white shadow-md bg-gray-600/70 px-3 py-2 rounded-lg break-words"
               >
                 {note}
               </li>

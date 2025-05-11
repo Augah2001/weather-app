@@ -34,9 +34,27 @@ const MapComponent = dynamic(
 
 export default function HomePage() {
 
+  
+
   // panel toggle + message list
 const [showNotifications, setShowNotifications] = useState(false);
 const [notifications, setNotifications] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mql = window.matchMedia('(min-width: 768px)');
+    const handleChange = (e: MediaQueryListEvent) => setShowNotifications(e.matches);
+
+    // Initialize
+    setShowNotifications(mql.matches);
+
+    // Listen for resizes across the 768px threshold
+    mql.addEventListener('change', handleChange);
+    return () => {
+      mql.removeEventListener('change', handleChange);
+    };
+  }, []);
 
 // keep last‐seen weather for every tracked location
 const prevWeatherRef = useRef<Record<
@@ -174,13 +192,23 @@ const prevWeatherRef = useRef<Record<
 
         const weatherData = await res.json(); // Parse the JSON response
         console.log("Received weather data from /api/weather:", weatherData);
+        
+
+        const timeWithMs = weatherData.updatedAt.split('T')[1];            // "07:59:21.737Z"
+        const time = timeWithMs.split('.')[0]; 
+        const hours =parseInt(time.substring(0, 2));
+        const minutes = parseInt(time.substring(3, 5));
+        const seconds = parseInt(time.substring(6, 8));
+        const final_time = `${hours+2}:${minutes}`; // Format time as "HH:MM:SS"
+
 
         // Update current weather state using data from the response
         setCurrent({
           temp: weatherData.temperature,
           wind: weatherData.windSpeed,
           humidity: weatherData.humidity,
-          condition: weatherData.conditionCode?.toString(), // Ensure condition is string for Helper
+          condition: weatherData.conditionCode?.toString(),
+          updatedAt: final_time // Ensure condition is string for Helper
         });
 
         // Update forecast state using data from the response
@@ -636,324 +664,258 @@ const handleMapClick = useCallback(
       }
   };
 
+  
+// Inside your component, before the return:
+const nextSixDays = forecast.slice(1, 7);
+
+return (
+  <>
+    {/* Toggle Notifications */}
+    <button
+      className="flex absolute top-4 right-4 p-2 bg-gray-800/90 rounded-full hover:bg-gray-800/90 z-20"
+      onClick={() => setShowNotifications(v => !v)}
+    >
+      <span className="hidden lg:inline text-yellow-400 mx-2">Notifications</span>
+      <Bell className="w-6 h-6 text-white" />
+    </button>
+
+    {/* Notifications Panel */}
+    <NotificationsPanel
+      isOpen={showNotifications}
+      notifications={notifications}
+      onClose={() => setShowNotifications(false)}
+    />
+
+    {/* Sidebar for tracked locations */}
+    <TrackedLocationsSidebar
+      onSelectLocation={handleSelectTracked}
+      activeLocationId={selectedLocationId ?? undefined}
+    />
+
+    {/* Map Background */}
+    <div className="absolute inset-0 z-0">
+      <MapComponent
+        onMapClick={handleMapClick}
+        center={mapCenter}
+        zoom={mapCenter ? 10 : 2}
+      />
+    </div>
+
+    {/* Main Content */}
+    <main className="absolute inset-x-0 top-0 p-4 z-10 mx-auto max-w-xs sm:max-w-md">
+      <div className="space-y-4">
+        {/* Search Input & Suggestions */}
+        <div id="search-area" className="relative">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="flex w-[60%] sm:w-full mx-auto bg-gray-800/60 backdrop-blur-sm rounded-full overflow-hidden"
+          >
+            <input
+              type="text"
+              value={inputLoc}
+              onChange={handleInputChange}
+              onFocus={() => {
+                if (inputLoc.length > 0 || suggestions.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              placeholder="Search City"
+              className="flex-grow px-4 py-2 bg-transparent placeholder-gray-400 text-white outline-none"
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearchSubmit();
+                }
+              }}
+            />
+            <button
+              onClick={handleSearchSubmit}
+              className="p-2 bg-teal-400/80 hover:bg-teal-400/100 transition flex items-center justify-center"
+              disabled={isLoadingWeather}
+            >
+              {isLoadingWeather ? (
+                <Loader2 className="w-5 h-5 text-white animate-spin" />
+              ) : (
+                <Search className="w-5 h-5 text-white" />
+              )}
+            </button>
+          </motion.div>
+
+          <AnimatePresence>
+            {showSuggestions && suggestions.length > 0 && (
+              <motion.ul
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.3 }}
+                className="absolute top-full left-0 right-0 mt-1 bg-gray-800/70 backdrop-blur-sm rounded-lg overflow-auto max-h-40 shadow-lg z-20 text-white"
+              >
+                {suggestions.map((s, i) => (
+                  <li
+                    key={i}
+                    onMouseDown={() => handleSelectSuggestion(s)}
+                    className="px-4 py-2 cursor-pointer hover:bg-gray-700/80 border-b border-gray-600 last:border-b-0"
+                  >
+                    {s.name}
+                  </li>
+                ))}
+              </motion.ul>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Status / Loading */}
+        {(statusMessage && !current) || isLoadingWeather ? (
+          <AnimatePresence mode="wait">
+            {isLoadingWeather ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex justify-center items-center text-white mt-2 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
+              >
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                <span>{statusMessage || 'Loading weather...'}</span>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="status"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="text-center text-white text-sm mt-2 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
+              >
+                {statusMessage}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        ) : null}
+
+        {/* Current Weather */}
+        {current && !statusMessage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-4 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
+          >
+            <div className="text-center">
+              <h1 className="text-4xl font-extrabold text-white drop-shadow-lg inline-flex items-center space-x-2">
+                <span>{displayedLoc.split(',')[0]}</span>
+                <AnimatePresence>
+                  {isDisplayedLocationTracked && (
+                    <motion.span
+                      key="tracked-star"
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.5 }}
+                      transition={{ duration: 0.2 }}
+                      title="This location is tracked"
+                    >
+                      <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </h1>
+              {displayedLoc.includes(',') && <p className="text-white text-sm opacity-80">{displayedLoc}</p>}
+              <p className="mt-2 inline-flex items-center space-x-2 text-white">
+                {getWeatherIcon(current.condition)}
+                <span className="text-xl font-semibold">{weatherCodeMap[current.condition] || 'Unknown'}</span>
+              </p>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-7xl font-bold text-white drop-shadow-xl">{Math.round(current.temp)}°C</span>
+            </div>
+            <div className="flex justify-around text-white">
+              <div className="flex flex-col items-center">
+                <Droplet className="w-5 h-5" />
+                <span className="mt-1 text-sm">{current.humidity ?? '--'}%</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <Wind className="w-5 h-5" />
+                <span className="mt-1 text-sm">{Math.round(current.wind)} km/h</span>
+              </div>
+            </div>
+            <div className="flex justify-center">
+              <p className="font-medium text-md text-yellow-500">
+                Last updated at: {current.updatedAt ?? 'Location not being tracked'}
+              </p>
+            </div>
+
+            {/* Forecast & Chart Controls */}
+            <div className="flex justify-center">
+              {forecast.length > 0 && (
+                <motion.button
+                  layout
+                  onClick={() => { setShowChart(false); setShowFullForecast(!showFullForecast); }}
+                  className="w-full flex items-center justify-center text-white bg-gray-700/50 hover:bg-gray-700/70 transition py-2 rounded-lg mt-4"
+                >
+                  {showFullForecast ? <ChevronUp className="w-5 h-5 mr-1" /> : <ChevronDown className="w-5 h-5 mr-1" />}
+                  {showFullForecast ? 'Hide Forecast' : `Show ${nextSixDays.length}-Day Forecast`}
+                </motion.button>
+              )}
+              <button
+                onClick={() => { setShowFullForecast(false); setShowChart(prev => !prev); }}
+                className="text-sm text-white bg-teal-400/80 hover:bg-teal-400/100 px-2 py-2 rounded-lg mt-4 mx-2 text-nowrap transition"
+              >
+                {showChart ? 'Hide Chart' : 'Show Chart'}
+              </button>
+            </div>
+
+            {/* Forecast Display */}
+            <AnimatePresence>
+              {showFullForecast && nextSixDays.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.4, ease: 'easeInOut' }}
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-4 lg:grid-cols-6 lg:gap-4 overflow-hidden pt-4 border-t border-gray-700/50"
+                >
+                  {nextSixDays.map((f, i) => (
+                    <motion.div
+                      key={f.day + i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.03 }}
+                      className="bg-gray-700/50 rounded-xl p-2 sm:p-3 flex flex-col items-center text-center text-white text-xs sm:text-sm break-words"
+                    >
+                      <span className="font-medium mb-1 truncate">{f.day}</span>
+                      {getWeatherIcon(f.weatherCode, 'w-6 h-6')}
+                      <span className="mt-1">{Math.round(f.max)}° / {Math.round(f.min)}°</span>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+              <div>
+                <ChartComponent data={forecast} visible={showChart} />
+              </div>
+            </AnimatePresence>
+
+            {/* Track Button */}
+            <motion.button
+              onClick={handleTrackLocation}
+              disabled={!displayedLoc || !displayedCoords || isDisplayedLocationTracked}
+              className={`w-full flex items-center justify-center text-white transition py-2 rounded-lg mt-4 font-semibold
+                ${!displayedLoc || !displayedCoords || isDisplayedLocationTracked
+                  ? 'bg-gray-600/50 cursor-not-allowed'
+                  : 'bg-teal-400/80 hover:bg-teal-400/100'}`}
+            >
+              {isDisplayedLocationTracked ? (
+                <>
+                  <Star className="w-5 h-5 mr-2 fill-yellow-400 text-yellow-400" />Tracking
+                </>
+              ) : 'Track Location'}
+            </motion.button>
+          </motion.div>
+        )}
+      </div>
+    </main>
+  </>
+);
 
   // --- Render ---
-  return (
-    <>
-      {/* toggle button */}
-<button
-  className="absolute top-4 right-4 p-2 bg-gray-800/70 rounded-full hover:bg-gray-800/90 z-20"
-  onClick={() => setShowNotifications((v) => !v)}
->
-  <Bell className="w-6 h-6 text-white" />
-</button>
-
-{/* notifications panel */}
-<NotificationsPanel
-  isOpen={showNotifications}
-  notifications={notifications}
-  onClose={() => setShowNotifications(false)}
-/>
-
-
-      {/* Sidebar for tracked locations */}
-      <TrackedLocationsSidebar
-        onSelectLocation={handleSelectTracked}
-        activeLocationId={selectedLocationId ?? undefined}
-      />
-      {/* Map Component (Optional) */}
-      {/* Place this div absolutely to cover the background */}
-       <div className="absolute inset-0 z-0">
-          <MapComponent onMapClick={handleMapClick} center={mapCenter} zoom={mapCenter ? 10 : 2} />
-       </div>
-
-
-      {/* Main content container positioned over the map or as the main layout */}
-      {/* Use z-index to ensure it's above the map */}
-      <main className="absolute top-0 left-0 right-0 p-4 z-10 max-w-md mx-auto">
-        <div className="space-y-4">
-          {/* Search Input Area and Suggestions */}
-          <div id="search-area" className="relative">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="flex bg-gray-800/60 backdrop-blur-sm rounded-full overflow-hidden"
-            >
-              <input
-                type="text"
-                value={inputLoc} // Bind input value to inputLoc state
-                onChange={handleInputChange} // Use the handler for input changes
-                 onFocus={() => {
-                     // Show suggestions dropdown on focus if there's any input text or existing suggestions
-                     if (inputLoc.length > 0 || suggestions.length > 0) {
-                         setShowSuggestions(true);
-                     }
-                 }}
-                 // onBlur is handled by the outside click effect with capture phase
-                 placeholder="Search City"
-                 className="flex-grow px-4 py-2 bg-transparent placeholder-gray-400 text-white outline-none"
-                 // Handle Enter key press to trigger search submission
-                 onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                       e.preventDefault(); // Prevent default form submission if input is inside a form
-                       handleSearchSubmit(); // Trigger the search logic (DB lookup/geocoding)
-                    }
-                 }}
-              />
-              {/* Search Button */}
-               <button
-                   onClick={handleSearchSubmit} // Trigger search submission on click
-                   className="p-2 bg-teal-400/80 hover:bg-teal-400/100 transition flex items-center justify-center"
-                   // Disable button while waiting for initial lookup/fetch
-                   disabled={isLoadingWeather}
-                >
-                   {/* Show loading spinner ONLY when isLoadingWeather is true */}
-                   {isLoadingWeather ? (
-                       <Loader2 className="w-5 h-5 text-white animate-spin" />
-                   ) : (
-                        <Search className="w-5 h-5 text-white" /> // Show search icon when not loading
-                   )}
-                </button>
-            </motion.div>
-
-            {/* Suggestions Dropdown (Animated) */}
-            <AnimatePresence>
-              {/* Show suggestions only if showSuggestions is true AND there are suggestions */}
-              {showSuggestions && suggestions.length > 0 && (
-                <motion.ul
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute top-full left-0 right-0 mt-1 bg-gray-800/70 backdrop-blur-sm rounded-lg overflow-auto max-h-40 shadow-lg z-20 text-white"
-                >
-                  {/* Map over and display each suggestion */}
-                  {suggestions.map((s, i) => (
-                    <li
-                      key={i} // Use index as key if suggestion data itself doesn't have a unique ID
-                      // Use onMouseDown instead of onClick to ensure it fires before the input's blur event
-                      onMouseDown={() => handleSelectSuggestion(s)}
-                      className="px-4 py-2 cursor-pointer hover:bg-gray-700/80 border-b border-gray-600 last:border-b-0"
-                    >
-                      {s.name}
-                    </li>
-                  ))}
-                </motion.ul>
-              )}
-            </AnimatePresence>
-          </div>
-
-           {/* Status Message or Loading Spinner Display */}
-            {/* This block appears when loading OR when a status message is set AND no current weather is displayed */}
-            {(statusMessage && !current) || isLoadingWeather ? (
-                <AnimatePresence mode="wait">
-                    {isLoadingWeather ? (
-                        <motion.div
-                            key="loading"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex justify-center items-center text-white mt-2 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
-                        >
-                            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                             {/* Show loading message, or status message if it was set just before loading started */}
-                             <span>{statusMessage ? statusMessage : "Loading weather..."}</span>
-                        </motion.div>
-                    ) : (
-                         // Show just the status message if not loading but statusMessage is set and no weather is displayed
-                         <motion.div
-                            key="status"
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="text-center text-white text-sm mt-2 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
-                        >
-                            {statusMessage}
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            ) : null /* Don't render this block if none of the conditions are met */}
-
-
-          {/* Weather Display Area */}
-          {/* Show this block only if current weather data is available AND there's no blocking status message */}
-          {current && !statusMessage ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }} // Reduced delay
-              className="space-y-4 p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-lg"
-            >
-              {/* Location Name and Tracking Status */}
-              <div className="text-center">
-                <h1 className="text-4xl font-extrabold text-white drop-shadow-lg inline-flex items-center justify-center space-x-2">
-                  {/* Display the primary name part of the displayed location */}
-                  <span>{displayedLoc.split(',')[0]}</span>
-                   {/* Display tracking status star icon if the displayed location is tracked */}
-                   <AnimatePresence mode="wait">
-                     {isDisplayedLocationTracked && (
-                        <motion.span
-                           key="tracked-star"
-                           initial={{ opacity: 0, scale: 0.5 }}
-                           animate={{ opacity: 1, scale: 1 }}
-                           exit={{ opacity: 0, scale: 0.5 }}
-                           transition={{ duration: 0.2 }}
-                           title="This location is tracked" // Tooltip for the star
-                        >
-                           {/* Star icon indicating tracking */}
-                           <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
-                        </motion.span>
-                     )}
-                   </AnimatePresence>
-                </h1>
-                 {/* Display full location name below if it's different from the primary part */}
-                {displayedLoc.split(',').length > 1 && (
-                     <p className="text-white text-sm opacity-80">{displayedLoc}</p>
-                )}
-
-                {/* Current Weather Condition and Icon */}
-                <p className="mt-2 inline-flex items-center space-x-2 text-white">
-                  {/* Get weather icon using the condition code */}
-                  {getWeatherIcon(current.condition)}
-                  <span className="text-xl font-semibold">
-                    {/* Map condition code to descriptive text */}
-                    {weatherCodeMap[current.condition] || 'Unknown Condition'}
-                  </span>
-                </p>
-              </div>
-
-              {/* Current Temperature */}
-              <div className="flex justify-center">
-                <span className="text-7xl font-bold text-white drop-shadow-xl">
-                  {Math.round(current.temp)}°C
-                </span>
-              </div>
-
-              {/* Current Wind and Humidity */}
-              <div className="flex justify-around text-white">
-                <div className="flex flex-col items-center">
-                  <Droplet className="w-5 h-5" /> {/* Humidity icon */}
-                  <span className="mt-1 text-sm">
-                    {current.humidity ?? '--'}% {/* Display humidity */}
-                  </span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <Wind className="w-5 h-5" /> {/* Wind icon */}
-                  <span className="mt-1 text-sm">
-                    {Math.round(current.wind)} km/h {/* Display wind speed */}
-                  </span>
-                </div>
-              </div>
-               
-              <div className='flex justify-center'><p className='font-medium text-md text-yellow-500'>{`Last updated at: ${current?.updatedAt != undefined?current?.updatedAt:"Location not being tracked"}`}</p></div>
-
-               {/* Forecast Toggle Button */}
-               {/* Show toggle button only if there's forecast data */}
-               <div className='flex justify-center'>
-                 <>{forecast.length > 0 && (
-                     <motion.button
-                          layout // Helps animate the button position when forecast expands/collapses
-                          onClick={() => {
-                            setShowChart(false) // Hide chart when toggling forecast
-                            setShowFullForecast(!showFullForecast)}} // Toggle forecast visibility state
-                          className="w-full flex items-center justify-center text-white bg-gray-700/50 hover:bg-gray-700/70 transition py-2 rounded-lg mt-4"
-                      >
-                          {/* Display appropriate Chevron icon */}
-                          {showFullForecast ? (
-                              <ChevronUp className="w-5 h-5 mr-1" />
-                          ) : (
-                              <ChevronDown className="w-5 h-5 mr-1" />
-                          )}
-                          {/* Button text changes based on forecast visibility */}
-                          {showFullForecast ? 'Hide Forecast' : `Show ${forecast.length}-Day Forecast`}
-                      </motion.button>
-                 )}
-                 <button
-                      onClick={() => {
-                        setShowFullForecast(false) // Hide forecast when toggling chart
-                        setShowChart(prev => !prev)}}
-                      className="text-sm text-white bg-teal-400/80 hover:bg-teal-400/100 px-2 py-2 rounded-lg mt-4  mx-2 text-nowrap transition"
-                    >
-                      {showChart ? 'Hide Chart' : 'Show Chart'}
-                    </button>
-                 </>
-               </div>
-
-
-               {/* Forecast Display Grid (Conditional) */}
-               {/* Show this block only if showFullForecast is true AND there's forecast data */}
-               <AnimatePresence >
-                <div >{showFullForecast && forecast.length > 0 && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                         // Animate height from 0 to auto (requires overflow-hidden) for collapse/expand effect
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.4, ease: "easeInOut" }}
-                         // overflow-hidden is important to clip content during height animation
-                        className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 overflow-hidden pt-4 border-t border-gray-700/50"
-                    >
-                        {/* Map over and display each daily forecast item */}
-                        {forecast.map((f, i) => (
-                        <motion.div
-                            key={f.day + i} // Use day and index for a more unique key
-                            initial={{ opacity: 0, y: 10 }} // Initial animation state
-                            animate={{ opacity: 1, y: 0 }} // Animation state when visible
-                            transition={{ delay: i * 0.03 }} // Stagger the animation delay
-                            className="bg-gray-700/50 rounded-xl p-3 flex flex-col items-center text-center text-white text-sm"
-                        >
-                            <span className="font-medium mb-1">{f.day}</span> {/* Day name */}
-                             {/* Get weather icon for forecast day */}
-                            {getWeatherIcon(f.weatherCode, 'w-6 h-6')} {/* Pass size class */}
-                            <span className="mt-1">
-                             {/* Display max and min temperatures */}
-                            {Math.round(f.max)}°/{Math.round(f.min)}°
-                            </span>
-                        </motion.div>
-                        ))}
-                    </motion.div>
-                )}
-                 <div>
-                    
-                    <ChartComponent data={forecast} visible={showChart} />
-
-                </div>
-                </div>
-               </AnimatePresence>
-
-               {/* Track Button */}
-                <motion.button
-                    onClick={handleTrackLocation} // Handler for clicking the track button
-                     // Disable if no weather is currently displayed or if it's already tracked
-                    disabled={!displayedLoc || !displayedCoords || isDisplayedLocationTracked}
-                    className={`w-full flex items-center justify-center text-white transition py-2 rounded-lg mt-4 font-semibold
-                        ${!displayedLoc || !displayedCoords || isDisplayedLocationTracked ? 'bg-gray-600/50 cursor-not-allowed' : 'bg-teal-400/80 hover:bg-teal-400/100'}`}
-                >
-                    {/* Button content changes based on tracking status */}
-                    {isDisplayedLocationTracked ? (
-                         <>
-                            {/* Show star and text when tracked */}
-                            <Star className="w-5 h-5 mr-2 fill-yellow-400 text-yellow-400" />
-                            Tracking
-                         </>
-                    ) : (
-                        // Show only text when not tracked
-                        "Track Location"
-                    )}
-                </motion.button>
-
-
-            </motion.div>
-          ) : null /* Weather display section is hidden when loading or status is shown, or no weather loaded */ }
-        </div>
-      </main>
-
-       {/* Map Component (Optional) */}
-       {/* Ensure this is uncommented and positioned correctly if you are using the map */}
-       {/* <div className="absolute inset-0 z-0">
-          <MapComponent onMapClick={handleMapClick} center={mapCenter} zoom={mapCenter ? 10 : 2} />
-       </div> */}
-    </>
-  );
 }

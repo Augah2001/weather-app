@@ -1,108 +1,151 @@
-// fetchWeatherFromApi.js
-// This script contains a function to fetch weather data from the OpenMeteo API.
+// lib/weatherApi.js
 
-// In Node.js, 'fetch' is globally available in recent versions (Node 18+).
-// If you are using an older Node.js version, you might need to install and require 'node-fetch'.
-// const fetch = require('node-fetch'); // Uncomment this line if using older Node.js
+// In Node.js 18+ `fetch` is global. If using older versions, you may need `node-fetch`.
 
-// Base URL for OpenMeteo Forecast API
 const OPENMETEO_WEATHER_API_BASE = 'https://api.open-meteo.com/v1/forecast';
 
 /**
- * Fetches current weather and 7-day daily forecast from OpenMeteo.
- * Handles API parameter construction and basic error checking.
- * Maps relevant API response keys to simpler keys.
- * @param {number} latitude - The latitude of the location.
- * @param {number} longitude - The longitude of the location.
- * @returns {Promise<object | undefined>} Fetched weather data in a mapped format or undefined on failure.
+ * @typedef {Object} CurrentWeather
+ * @property {number} temperature   Current temperature (°C)
+ * @property {number} wind_speed    Wind speed (km/h)
+ * @property {number} humidity      Relative humidity (%)
+ * @property {number} condition_code WMO weather code
  */
-async function fetchWeatherFromApi(latitude, longitude) {
-    // Construct URLSearchParams using an array of key-value pairs to handle repeated 'daily' keys correctly
-    const params = new URLSearchParams([
-        ['latitude', latitude.toString()], // Convert numbers to strings for URL params
-        ['longitude', longitude.toString()], // Convert numbers to strings for URL params
-        // Request current weather variables as a comma-separated list
-        ['current', 'temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code'],
-        // Specify units
-        ['temperature_unit', 'celsius'],
-        ['wind_speed_unit', 'kmh'],
-        ['precipitation_unit', 'mm'],
-        // Set timezone to auto-detect based on coordinates
-        ['timezone', 'auto'],
-        // Request 7 days of forecast
-        ['forecast_days', '7'],
-        // Add each required daily variable as a separate 'daily' parameter
-        // Note: Do NOT request 'time' here; the API includes it automatically with other daily variables.
-        ['daily', 'weather_code'], // WMO Weather interpretation code
-        ['daily', 'temperature_2m_max'], // Maximum daily temperature
-        ['daily', 'temperature_2m_min'], // Minimum daily temperature
-    ]);
 
-    // Construct the full API URL
-    const url = `${OPENMETEO_WEATHER_API_BASE}?${params.toString()}`;
-    console.log("[fetchWeatherFromApi] Fetching OpenMeteo URL:", url); // Log the actual URL being fetched
+/**
+ * @typedef {Object} DailyForecast
+ * @property {string} date         YYYY-MM-DD
+ * @property {number} max_temp     Maximum temperature (°C)
+ * @property {number} min_temp     Minimum temperature (°C)
+ * @property {number} condition_code WMO weather code
+ */
 
-    try {
-        // Use the global fetch provided by Node.js (Node 18+)
-        const response = await fetch(url);
+/**
+ * @typedef {Object} WeatherResponse
+ * @property {CurrentWeather} current  Current weather data
+ * @property {DailyForecast[]} daily   7-day forecast data
+ */
 
-        // Check if the HTTP response status is OK (200-299)
-        if (!response.ok) {
-            console.error(`[fetchWeatherFromApi] OpenMeteo API HTTP error! status: ${response.status}`);
-             try {
-                // Attempt to read the error body from the API response
-                const errorBody = await response.text();
-                console.error('[fetchWeatherFromApi] OpenMeteo API Error Body:', errorBody);
-            } catch (e) {
-                 console.error('[fetchWeatherFromApi] Could not read OpenMeteo error body:', e);
-            }
-            return undefined; // Indicate failure to the caller
-        }
+/**
+ * Fetches current + 7-day forecast from Open-Meteo
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<WeatherResponse|undefined>}
+ */
+async function fetchOpenMeteo(latitude, longitude) {
+  const params = new URLSearchParams([
+    ['latitude', latitude.toString()],
+    ['longitude', longitude.toString()],
+    ['current', 'temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code'],
+    ['temperature_unit', 'celsius'],
+    ['wind_speed_unit', 'kmh'],
+    ['precipitation_unit', 'mm'],
+    ['timezone', 'auto'],
+    ['forecast_days', '7'],
+    ['daily', 'weather_code'],
+    ['daily', 'temperature_2m_max'],
+    ['daily', 'temperature_2m_min'],
+  ]);
 
-        // Parse the JSON response from the API
-        const data = await response.json();
-        // console.log(data)
-
-         // Perform basic validation on the received data structure
-         // Check if expected top-level keys and essential daily data (like time) are present
-         if (!data || !data.current || !data.daily || !data.daily.time || !Array.isArray(data.daily.time)) {
-             console.error("[fetchWeatherFromApi] OpenMeteo API returned unexpected data structure or missing daily.time:", data);
-             return undefined; // Indicate invalid data received
-         }
-
-         // Optional: Log the raw data received from OpenMeteo (can be verbose)
-         // console.log("[fetchWeatherFromApi] Raw data from OpenMeteo:", JSON.stringify(data, null, 2));
-
-
-        // Map relevant API data keys to a consistent, simpler format for internal use
-        const current = {
-            temperature: data.current.temperature_2m,
-            wind_speed: data.current.wind_speed_10m,
-            humidity: data.current.relative_humidity_2m, // <-- Mapping humidity to correct key
-            condition_code: data.current.weather_code, // WMO code
-        };
-
-        // Map daily forecast data. OpenMeteo provides daily variables as parallel arrays indexed by 'time'.
-        const daily = data.daily.time.map((date, index) => ({
-            date: date, // YYYY-MM-DD string provided in data.daily.time array
-            max_temp: data.daily.temperature_2m_max[index], // Access max temp using the same index
-            min_temp: data.daily.temperature_2m_min[index], // Access min temp using the same index
-            condition_code: data.daily.weather_code[index], // Access WMO code using the same index
-        }));
-
-        // Return the mapped current and daily data
-        // console.log("[fetchWeatherFromApi] Mapped weather data:", { current, daily });
-        return { current, daily };
-
-    } catch (error) {
-        // Catch any network errors or issues during JSON parsing
-        console.error('[fetchWeatherFromApi] Error fetching weather from OpenMeteo API:', error);
-        return undefined; // Indicate failure
+  const url = `${OPENMETEO_WEATHER_API_BASE}?${params}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error('[OpenMeteo] HTTP error:', res.status);
+      return undefined;
     }
-    // No finally block needed here; cleanup handled by the caller
+    const data = await res.json();
+
+    const current = {
+      temperature: data.current.temperature_2m,
+      wind_speed: data.current.wind_speed_10m,
+      humidity: data.current.relative_humidity_2m,
+      condition_code: data.current.weather_code,
+    };
+
+    const daily = data.daily.time.map((date, i) => ({
+      date,
+      max_temp: data.daily.temperature_2m_max[i],
+      min_temp: data.daily.temperature_2m_min[i],
+      condition_code: data.daily.weather_code[i],
+    }));
+
+    return { current, daily };
+  } catch (err) {
+    console.error('[OpenMeteo] Fetch error:', err);
+    return undefined;
+  }
 }
 
-// Export the function using CommonJS module syntax so it can be required by wsServer.js
-module.exports = {
-    fetchWeatherFromApi
-};
+/**
+ * Fetches current weather from MET Norway (instant values only)
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<CurrentWeather|undefined>}
+ */
+async function fetchMetNorway(latitude, longitude) {
+  const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${latitude}&lon=${longitude}`;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'MyApp/1.0 you@example.com' }
+    });
+    if (!res.ok) {
+      console.error('[MET Norway] HTTP error:', res.status);
+      return undefined;
+    }
+    const data = await res.json();
+    const details = data.properties.timeseries?.[0]?.data.instant.details;
+    if (!details) {
+      console.error('[MET Norway] Missing details');
+      return undefined;
+    }
+
+    
+    return {
+      temperature: details.air_temperature,
+      wind_speed: details.wind_speed,
+      humidity: details.relative_humidity,
+      condition_code: 0 // placeholder
+    };
+  } catch (err) {
+    console.error('[MET Norway] Fetch error:', err);
+    return undefined;
+  }
+}
+
+/**
+ * Averages two CurrentWeather objects
+ * @param {CurrentWeather} a
+ * @param {CurrentWeather} b
+ * @returns {CurrentWeather}
+ */
+function averageCurrent(a, b) {
+  return {
+    temperature:   (a.temperature + b.temperature) / 2,
+    wind_speed:    (a.wind_speed + b.wind_speed) / 2,
+    humidity:      (a.humidity + b.humidity) / 2,
+    condition_code: Math.round((a.condition_code + b.condition_code) / 2),
+  };
+}
+
+/**
+ * Fetches and aggregates weather:
+ * - Averages current from Open-Meteo & MET Norway
+ * - Returns Open-Meteo’s daily forecast
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<WeatherResponse|undefined>}
+ */
+async function fetchWeatherFromApi(latitude, longitude) {
+  const [open, met] = await Promise.all([
+    fetchOpenMeteo(latitude, longitude),
+    fetchMetNorway(latitude, longitude)
+  ]);
+  if (!open) return undefined;
+  if (!met) return open;
+
+  const current = averageCurrent(open.current, met);
+  return { current, daily: open.daily };
+}
+
+module.exports = { fetchWeatherFromApi };

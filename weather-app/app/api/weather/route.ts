@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
                     windSpeed: current.windSpeed,
                     humidity: current.humidity,
                     conditionCode: current.conditionCode,
+                    updatedAt: current.fetchedAt, // Include the last updated timestamp
                     daily: daily.map(d => ({
                         // Add day name to match frontend expectation
                         day: new Date(d.date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
 
              let isDataFresh = false;
              if (current) {
-                  const fetchedAt = new Date(current.fetchedAt);
+                  const fetchedAt = new Date();
                   const now = new Date();
                   const ageMinutes = (now.getTime() - fetchedAt.getTime()) / (1000 * 60);
                   isDataFresh = ageMinutes < NON_TRACKED_CACHE_DURATION_MINUTES;
@@ -175,6 +176,8 @@ export async function GET(request: NextRequest) {
                      windSpeed: currentData?.windSpeed,
                      humidity: currentData?.humidity,
                      conditionCode: currentData?.conditionCode,
+                        updatedAt: currentData?.fetchedAt, // Include the last updated timestamp
+                     
                      daily: dailyData.map(d => ({
                          day: new Date(d.date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short' }),
                          max: d.maxTemp,
@@ -334,8 +337,14 @@ async function fetchAndSaveWeather(locationName: string, locationId: number, lat
 
          // 7. Format the fetched API data for returning to the main GET handler
          // This format should match what the frontend expects
+         const { fetchedAt }: any = await prisma.currentWeather.findUnique({
+            where: { locationId },
+            select: { fetchedAt: true }
+            });
+
          const responseData = {
              temperature: apiData.current.temperature,
+             updatedAt: fetchedAt, // Include the last updated timestamp
              windSpeed: apiData.current.wind_speed,
              // *** CORRECTED HUMIDITY KEY FOR RESPONSE ***
              humidity: apiData.current.relative_humidity_2m, // <-- Use correct key here for response data
