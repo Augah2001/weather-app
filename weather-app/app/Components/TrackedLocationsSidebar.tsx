@@ -90,7 +90,7 @@ export default function TrackedLocationsSidebar({ onSelectLocation, activeLocati
             transition={{ type: 'tween', duration: 0.3 }}
             className="fixed inset-y-0 left-0 z-20 w-64 bg-gray-800/70 backdrop-blur-md shadow-xl p-4 overflow-auto"
           >
-            <h2 className="text-xl font-semibold text-yellow-400 mb-4">
+            <h2 className="text-xl font-semibold text-yellow-400 ms-8 mb-4">
               Tracked Locations
             </h2>
 

@@ -14,7 +14,7 @@ const { fetchWeatherFromApi } = require('./app/lib/weatherApi-js'); // <-- ADJUS
 // Get WebSocket server port from environment variables or default to 3002
 const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 3002;
 // Interval for background polling of tracked locations (e.g., every 30 minutes) in milliseconds
-const POLLING_INTERVAL_MS = 5000; // 30 minutes
+const POLLING_INTERVAL_MS = 1000 * 60 * 15; // 30 minutes
 
 // --- Initialization ---
 const prisma = new PrismaClient(); // Instantiate Prisma Client
